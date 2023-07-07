@@ -3,11 +3,11 @@ from pprint import pprint
 from collections import namedtuple
 import fire
 
+from x_dgcnn import DGCNN_Seg
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from x_dgcnn import DGCNN_Seg
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
