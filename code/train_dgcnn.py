@@ -97,7 +97,21 @@ class LitModel(pl.LightningModule):
         self.log('val/macc', metrics.macc, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
-        pass
+        y = batch.label
+        preds = torch.zeros_like(y)
+        for idx_part in batch.idx_parts:
+            idx_part = idx_part[0]
+            xyz = batch.xyz[:, idx_part].transpose(1, 2).contiguous()
+            x = torch.cat([batch.rgb[:, idx_part], batch.height[:, idx_part]], dim=-1).transpose(1, 2).contiguous()
+            pred = self(x, xyz)
+            preds[:, idx_part] = pred.argmax(dim=1)
+
+        self.test_cm(preds, y)
+
+        metrics = calc_metrics(self.val_cm.confmat)
+        self.log('test/miou', metrics.miou, prog_bar=True)
+        self.log('test/oa', metrics.oa, prog_bar=True)
+        self.log('test/macc', metrics.macc, prog_bar=True)
 
     def configure_optimizers(self):
         H = self.hparams
@@ -190,6 +204,9 @@ def main(
     trainer = pl.Trainer(logger=logger, accelerator='cuda', max_epochs=epochs, callbacks=[callback],
                          gradient_clip_val=gradient_clip_val)
     trainer.fit(model)
+
+    # test
+    trainer.test(model)
 
 
 if __name__ == '__main__':

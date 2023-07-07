@@ -255,7 +255,12 @@ class S3DIS(Dataset):
             data_path = os.path.join(self.raw_root, self.data_list[data_idx] + '.npy')
             cdata = np.load(data_path).astype(np.float32)
             cdata[:, :3] -= np.min(cdata[:, :3], 0)
-            return load_data(cdata, self.voxel_size)
+            data = load_data(cdata, self.voxel_size)
+            if exists(self.transform):
+                _data = self.transform(T.Inputs(xyz=data.xyz, rgb=data.rgb, label=data.label))
+                data = DATA(_data['xyz'].astype('f4'), _data['rgb'].astype('f4'), _data['label'].astype('i8'),
+                            data.height[:, None].astype('f4'), data.idx_parts)
+            return data
 
         if self.presample:
             coord, feat, label = np.split(self.data[data_idx], [3, 6], axis=1)
@@ -276,6 +281,7 @@ class S3DIS(Dataset):
         # to float32
         data['xyz'] = data['xyz'].astype(np.float32)
         data['rgb'] = data['rgb'].astype(np.float32)
+        data['label'] = data['label'].astype(np.int64)
 
         if 'height' not in data.keys():
             data['height'] = coord[:, self.gravity_dim:self.gravity_dim + 1].astype(np.float32)
