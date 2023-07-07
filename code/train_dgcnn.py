@@ -92,9 +92,9 @@ class LitModel(pl.LightningModule):
         # cm = self.val_iou.confmat
         self.val_cm(pred, y)
         metrics = calc_metrics(self.val_cm.confmat)
-        self.log('val/miou', metrics.miou, prog_bar=True)
-        self.log('val/oa', metrics.oa, prog_bar=True)
-        self.log('val/macc', metrics.macc, prog_bar=True)
+        self.log('val/miou', metrics.miou, prog_bar=True, sync_dist=True)
+        self.log('val/oa', metrics.oa, prog_bar=True, sync_dist=True)
+        self.log('val/macc', metrics.macc, prog_bar=True, sync_dist=True)
 
     def test_step(self, batch, batch_idx):
         y = batch.label
@@ -109,9 +109,9 @@ class LitModel(pl.LightningModule):
         self.test_cm(preds, y)
 
         metrics = calc_metrics(self.val_cm.confmat)
-        self.log('test/miou', metrics.miou, prog_bar=True)
-        self.log('test/oa', metrics.oa, prog_bar=True)
-        self.log('test/macc', metrics.macc, prog_bar=True)
+        self.log('test/miou', metrics.miou, prog_bar=True, sync_dist=True)
+        self.log('test/oa', metrics.oa, prog_bar=True, sync_dist=True)
+        self.log('test/macc', metrics.macc, prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
         H = self.hparams
