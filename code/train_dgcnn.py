@@ -165,21 +165,21 @@ class LitModel(pl.LightningModule):
 
 def main(
         # ---- data ----
-        loop=10,
+        loop=15,
         voxel_max=20000,
         test_area=5,
         # ---- train ----
         epochs=100,
-        batch_size=4,
+        batch_size=2,
         lr=1e-3,
         optimizer='AdamW',
-        weight_decay=1e-2,
+        weight_decay=1e-4,
         warm_up=10,
         loss='cross_entropy',
-        label_smoothing=0.2,
-        gradient_clip_val=10,
+        label_smoothing=0.,
+        gradient_clip_val=0,
         # ---- model -----
-        k=20,
+        k=40,
         dropout=0.3,
         # ---- log -----
         name='dgcnn',
