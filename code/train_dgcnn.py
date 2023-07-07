@@ -1,5 +1,6 @@
 import os
 from pprint import pprint
+from collections import namedtuple
 import fire
 
 import torch
@@ -11,9 +12,25 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import torchmetrics
+from torchmetrics.classification import MulticlassConfusionMatrix
 
 from dataset.s3dis import S3DIS, load_data
 from dataset import transforms as T
+
+Metric = namedtuple('Metric', ['miou', 'oa', 'macc'])
+
+
+def calc_metrics(confmat, eps=1e-5):
+    tp = confmat.diag()
+    union = confmat.sum(dim=0) + confmat.sum(dim=1) - tp
+    iou = (tp + eps) / (union + eps)
+    miou = iou.mean()
+
+    oa = tp.sum() / confmat.sum()
+    macc = (tp + eps) / (confmat.sum(dim=1) + eps)
+    macc = macc.mean()
+
+    return Metric(miou, oa, macc)
 
 
 class LitModel(pl.LightningModule):
@@ -44,8 +61,8 @@ class LitModel(pl.LightningModule):
 
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
-        self.val_iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
-        self.test_iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
+        self.val_cm = MulticlassConfusionMatrix(task='multiclass', num_classes=13)
+        self.test_cm = MulticlassConfusionMatrix(task='multiclass', num_classes=13)
 
     def forward(self, x, xyz):
         return self.net(x, xyz)
@@ -72,12 +89,12 @@ class LitModel(pl.LightningModule):
         loss = F.cross_entropy(pred, y, label_smoothing=self.hparams.label_smoothing)
         self.log('val_loss', loss, prog_bar=True)
 
-        cm = self.val_iou.confmat
-        oa = cm.diag().sum() / cm.sum()
-        macc = cm.diag() / cm.sum(1)
-        self.val_iou(pred, y)
-        self.log('val_oa', oa, prog_bar=True)
-        self.log('val_macc', macc.mean(), prog_bar=True)
+        # cm = self.val_iou.confmat
+        self.val_cm(pred, y)
+        metrics = calc_metrics(self.val_cm.confmat)
+        self.log('val_miou', metrics.miou, prog_bar=True)
+        self.log('val_oa', metrics.oa, prog_bar=True)
+        self.log('val_macc', metrics.macc, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         pass
