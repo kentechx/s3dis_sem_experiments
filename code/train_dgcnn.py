@@ -92,9 +92,9 @@ class LitModel(pl.LightningModule):
         # cm = self.val_iou.confmat
         self.val_cm(pred, y)
         metrics = calc_metrics(self.val_cm.confmat)
-        self.log('val_miou', metrics.miou, prog_bar=True)
-        self.log('val_oa', metrics.oa, prog_bar=True)
-        self.log('val_macc', metrics.macc, prog_bar=True)
+        self.log('val/miou', metrics.miou, prog_bar=True)
+        self.log('val/oa', metrics.oa, prog_bar=True)
+        self.log('val/macc', metrics.macc, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         pass
@@ -126,8 +126,7 @@ class LitModel(pl.LightningModule):
         ])
         dataset = S3DIS(voxel_max=H.voxel_max, test_area=H.test_area, split='train', transform=transform, loop=H.loop,
                         presample=False, shuffle=True)
-        return DataLoader(dataset, batch_size=H.batch_size, shuffle=True, num_workers=4, drop_last=True,
-                          pin_memory=True)
+        return DataLoader(dataset, batch_size=H.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     def val_dataloader(self):
         H = self.hparams
@@ -172,6 +171,7 @@ def main(
         name='dgcnn',
         project='s3dis',
         offline=False,
+        watch=False,
 ):
     name = f"{name}_area{test_area}"
     pprint(locals())
@@ -182,6 +182,9 @@ def main(
     model = LitModel(loop=loop, voxel_max=voxel_max, epochs=epochs, batch_size=batch_size, lr=lr, optimizer=optimizer,
                      weight_decay=weight_decay, warm_up=warm_up, loss=loss, label_smoothing=label_smoothing, k=k,
                      dropout=dropout, test_area=test_area)
+
+    if watch:
+        logger.watch(model, log='all')
 
     callback = ModelCheckpoint(save_last=True)
     trainer = pl.Trainer(logger=logger, accelerator='cuda', max_epochs=epochs, callbacks=[callback],
