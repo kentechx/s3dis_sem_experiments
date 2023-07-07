@@ -23,7 +23,7 @@ def download_s3dis():
     if not os.path.exists(os.path.join(DATA_DIR, 's3disfull')):
         if not os.path.exists(os.path.join(DATA_DIR, 's3disfull.tar')):
             print('Downloading S3DISFull dataset...')
-            gdown.download(url, osp.join(osp.dirname(__file__), 's3disfull.tar'), quiet=False)
+            gdown.download(url, osp.join(DATA_DIR, 's3disfull.tar'), quiet=False)
         print('Extracting...')
         os.system(f'tar -xvf {os.path.join(DATA_DIR, "s3disfull.tar")} -C {DATA_DIR}')
 
