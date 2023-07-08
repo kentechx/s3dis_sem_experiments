@@ -5,7 +5,7 @@ This repository contains semantic segmentation experiments conducted on the S3DI
 ## Dataset
 
 The S3DIS dataset is annotated for indoor scene segmentation. It consists of 3D point clouds of 6 large-scale indoor
-areas, with 271 rooms and 13,534 labeled objects. The dataset is split into 6 parts, with 5 parts for training and 1
+areas, with 272 rooms and 13 semantic categories. The dataset is split into 6 parts, with 5 parts for training and 1
 part for testing.
 
 ## Install Dependencies
