@@ -87,7 +87,7 @@ class LitModel(pl.LightningModule):
 
         pred = self(x, xyz)
         loss = F.cross_entropy(pred, y, label_smoothing=self.hparams.label_smoothing)
-        self.log('val_loss', loss, prog_bar=True)
+        self.log('val/loss', loss, prog_bar=True)
 
         # cm = self.val_iou.confmat
         self.val_cm(pred, y)
