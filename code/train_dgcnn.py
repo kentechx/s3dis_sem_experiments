@@ -205,9 +205,6 @@ def main(
                          gradient_clip_val=gradient_clip_val)
     trainer.fit(model)
 
-    # test
-    trainer.test(model)
-
 
 if __name__ == '__main__':
     fire.Fire(main)
