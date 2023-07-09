@@ -292,8 +292,9 @@ class S3DIS(Dataset):
                 voxel = voxelize(xyz, self.voxel_size)
                 uniq_idx = voxel_select(voxel, None)
                 xyz, rgb, label = map(lambda x: x[uniq_idx], [xyz, rgb, label])
-            xyz, rgb, label = crop_pc(xyz, rgb, label, self.voxel_max, init_idx=None, variable=self.variable,
-                                      shuffle=self.shuffle)
+            if exists(self.voxel_max):
+                xyz, rgb, label = crop_pc(xyz, rgb, label, self.voxel_max, init_idx=None, variable=self.variable,
+                                          shuffle=self.shuffle)
         return xyz, rgb, label
 
     def get_test_data(self, idx):
