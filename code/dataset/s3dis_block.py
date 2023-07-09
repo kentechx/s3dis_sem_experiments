@@ -10,7 +10,7 @@ from typing import Literal
 from torch.utils.data import Dataset
 
 from . import transforms as T
-from .s3dis import S3DIS_data
+from .s3dis import S3DIS_data, combine_features
 from collections import namedtuple
 
 url = 'https://shapenet.cs.stanford.edu/media/indoor3d_sem_seg_hdf5_data.zip'
@@ -85,17 +85,6 @@ def load_data_semseg(partition, test_area):
     return all_data, all_labels
 
 
-def combine_features(xyz, rgb, height, feature):
-    if feature == 'xyz':
-        return xyz
-    elif feature == 'xyzrgb':
-        return np.concatenate([xyz, rgb], axis=-1)
-    elif feature == 'rgbh':
-        return np.concatenate([rgb, height], axis=-1)
-    else:
-        raise NotImplementedError
-
-
 class S3DISBlock(Dataset):
     num_points = 4096  # each block has 4096 points
     gravity_dim = 2
@@ -104,7 +93,7 @@ class S3DISBlock(Dataset):
                  feature: Literal['xyz', 'xyzrgb', 'rgbh'] = 'rgbh',
                  partition: Literal['train', 'val', 'test'] = 'train',
                  test_area='5',
-                 transform: T.Transform = None):
+                 transform: T.Transform = T.TransformCompose([T.ColorNormalize])):
         self.feature = feature
         self.partition = partition
         self.transform = transform
@@ -133,7 +122,7 @@ class S3DISBlock(Dataset):
         height = xyz[:, [self.gravity_dim]]
         feat = combine_features(xyz, rgb, height, self.feature)
 
-        return S3DIS_data(xyz=xyz, feat=feat, label=label, idx_parts=None)
+        return S3DIS_data(xyz=xyz, feat=feat, label=label, idx_parts=[])
 
     def __len__(self):
         return len(self.data)

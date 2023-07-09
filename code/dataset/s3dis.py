@@ -1,31 +1,38 @@
 # This file is modified from
 # https://github.com/guochengqian/openpoints/blob/2bc0bf9cb2aee0fcd61f6cdc3abca1207e5e809e/dataset/s3dis/s3dis.py
-import os, os.path as osp
+import os
 import gdown
 import pickle
 import numpy as np
 from tqdm import tqdm
-import torch
+from typing import Literal
+from pathlib import Path
 from torch.utils.data import Dataset
 from . import transforms as T
 from collections import namedtuple
 
 url = "https://drive.google.com/uc?id=1MX3ZCnwqyRztG1vFRiHkKTz68ZJeHS4Y"
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')  # code/dataset/data
+DATA_DIR = Path(__file__).parent / 'data'  # code/dataset/data
 
 
 def exists(val):
     return val is not None
 
 
+def default(*vals):
+    for val in vals:
+        if exists(val):
+            return val
+
+
 def download_s3dis():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    if not os.path.exists(os.path.join(DATA_DIR, 's3disfull')):
-        if not os.path.exists(os.path.join(DATA_DIR, 's3disfull.tar')):
+    DATA_DIR.mkdir(exist_ok=True)
+    if not (DATA_DIR / 's3disfull').exists():
+        if not (DATA_DIR / 's3disfull.tar').exists():
             print('Downloading S3DISFull dataset...')
-            gdown.download(url, osp.join(DATA_DIR, 's3disfull.tar'), quiet=False)
+            gdown.download(url, DATA_DIR / 's3disfull.tar', quiet=False)
         print('Extracting...')
-        os.system(f'tar -xvf {os.path.join(DATA_DIR, "s3disfull.tar")} -C {DATA_DIR}')
+        os.system(f'tar -xvf {DATA_DIR / "s3disfull.tar"} -C {DATA_DIR}')
 
 
 def fnv_hash_vec(arr):
@@ -63,7 +70,10 @@ def ravel_hash_vec(arr):
     return keys
 
 
-def voxelize(coord, voxel_size=0.05, hash_type='fnv', mode='train'):
+VoxelGrid = namedtuple('VoxelGrid', ['p2v', 'v2p', 'v2p_start', 'v_pcount'])
+
+
+def voxelize(coord, voxel_size=0.05, hash_type='fnv'):
     discrete_coord = np.floor(coord / np.array(voxel_size))
     if hash_type == 'ravel':
         key = ravel_hash_vec(discrete_coord)
@@ -72,43 +82,42 @@ def voxelize(coord, voxel_size=0.05, hash_type='fnv', mode='train'):
 
     idx_sort = np.argsort(key)
     key_sort = key[idx_sort]
-    _, voxel_idx, count = np.unique(key_sort, return_counts=True, return_inverse=True)
-    if mode == 'train':  # train mode
-        idx_select = np.cumsum(np.insert(count, 0, 0)[
-                               0:-1]) + np.random.randint(0, count.max(), count.size) % count
-        idx_unique = idx_sort[idx_select]
-        return idx_unique
-    else:  # val mode
-        return idx_sort, voxel_idx, count
+    _, p_sort2voxel_id, voxel_pcount = np.unique(key_sort, return_counts=True, return_inverse=True)
+    p2voxel_id = np.empty(len(coord), dtype=np.int64)
+    p2voxel_id[idx_sort] = p_sort2voxel_id
+
+    v2point_id = idx_sort  # voxel to point id
+    v2point_id_start = np.cumsum(np.insert(voxel_pcount, 0, 0)[0:-1])  # voxel to point id start
+    return VoxelGrid(p2voxel_id, v2point_id, v2point_id_start, voxel_pcount)
 
 
-def crop_pc(coord, feat, label, split='train',
-            voxel_size=0.04, voxel_max=None,
-            downsample=True, variable=True, shuffle=True):
-    if voxel_size and downsample:
-        # Is this shifting a must? I borrow it from Stratified Transformer and Point Transformer.
-        coord -= coord.min(0)
-        uniq_idx = voxelize(coord, voxel_size)
-        coord, feat, label = coord[uniq_idx], feat[uniq_idx] if feat is not None else None, label[
-            uniq_idx] if label is not None else None
+def voxel_select(voxel: VoxelGrid, start_idx=None):
+    if exists(start_idx):
+        offsets = start_idx % voxel.v_pcount
+    else:
+        offsets = np.random.randint(0, voxel.v_pcount.max(), voxel.v_pcount.size) % voxel.v_pcount
+    pid_select = voxel.v2p_start + offsets
+    return pid_select
 
-    if voxel_max is not None:
-        crop_idx = None
-        N = len(label)  # the number of points
-        if N >= voxel_max:
-            init_idx = np.random.randint(N) if 'train' in split else N // 2
-            crop_idx = np.argsort(np.sum(np.square(coord - coord[init_idx]), 1))[:voxel_max]
-        elif not variable:
-            # fill more points for non-variable case (batched data)
-            cur_num_points = N
-            query_inds = np.arange(cur_num_points)
-            padding_choice = np.random.choice(cur_num_points, voxel_max - cur_num_points)
-            crop_idx = np.hstack([query_inds, query_inds[padding_choice]])
-        crop_idx = np.arange(coord.shape[0]) if crop_idx is None else crop_idx
-        if shuffle:
-            np.random.shuffle(crop_idx)
-        coord, feat, label = coord[crop_idx], feat[crop_idx] if feat is not None else None, label[
-            crop_idx] if label is not None else None
+
+def crop_pc(coord, feat, label, voxel_max, init_idx=None, variable=True, shuffle=True):
+    crop_idx = None
+    N = len(label)  # the number of points
+    if N >= voxel_max:
+        init_idx = default(init_idx, np.random.randint(N))
+        crop_idx = np.argsort(np.sum(np.square(coord - coord[init_idx]), 1))[:voxel_max]
+    elif not variable:
+        # fill more points for non-variable case (batched data)
+        cur_num_points = N
+        query_inds = np.arange(cur_num_points)
+        padding_choice = np.random.choice(cur_num_points, voxel_max - cur_num_points)
+        crop_idx = np.hstack([query_inds, query_inds[padding_choice]])
+    crop_idx = np.arange(coord.shape[0]) if crop_idx is None else crop_idx
+    if shuffle:
+        np.random.shuffle(crop_idx)
+    coord, feat, label = coord[crop_idx], feat[crop_idx] if feat is not None else None, label[
+        crop_idx] if label is not None else None
+
     coord -= coord.min(0)
 
     return (coord.astype(np.float32),
@@ -116,29 +125,18 @@ def crop_pc(coord, feat, label, split='train',
             label.astype('i8') if label is not None else None)
 
 
-DATA = namedtuple('DATA', ['xyz', 'rgb', 'label', 'height', 'idx_parts'])
-
-
-def load_data(data, voxel_size=0.04):
-    """
-    For inference, load the whole point cloud.
-    """
-    xyz, rgb, label = data[:, :3], data[:, 3:6], data[:, 6]
-
-    idx_parts = []
-    if voxel_size is not None:
-        # idx_sort: original point indicies sorted by voxel NO.
-        # voxel_idx: Voxel NO. for the sorted points
-        idx_sort, voxel_idx, count = voxelize(xyz, voxel_size, mode='test')
-        for i in range(count.max()):
-            idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + i % count
-            idx_part = idx_sort[idx_select]
-            idx_parts.append(idx_part)
+def combine_features(xyz, rgb, height, feature):
+    if feature == 'xyz':
+        return xyz
+    elif feature == 'xyzrgb':
+        return np.concatenate([xyz, rgb], axis=-1)
+    elif feature == 'rgbh':
+        return np.concatenate([rgb, height], axis=-1)
     else:
-        idx_parts.append(np.arange(label.shape[0]))
+        raise NotImplementedError
 
-    height = xyz[:, 2]
-    return DATA(xyz, rgb, label, height, idx_parts)
+
+S3DIS_data = namedtuple('S3DIS_data', ['xyz', 'feat', 'label', 'idx_parts'])
 
 
 class S3DIS(Dataset):
@@ -188,12 +186,13 @@ class S3DIS(Dataset):
     """
 
     def __init__(self,
-                 data_root: str = osp.join(DATA_DIR, 's3disfull'),
+                 data_root: str = DATA_DIR / 's3disfull',
                  test_area: int = 5,
                  voxel_size: float = 0.04,
                  voxel_max=None,
+                 feature: Literal['xyz', 'xyzrgb', 'rgbh'] = 'rgbh',
                  split: str = 'train',
-                 transform: T.Transform = None,
+                 transform: T.Transform = T.TransformCompose([T.ColorNormalize(), T.XYZAlign()]),
                  loop: int = 1,
                  presample: bool = False,
                  variable: bool = False,
@@ -204,92 +203,124 @@ class S3DIS(Dataset):
         super().__init__()
         self.split, self.voxel_size, self.transform, self.voxel_max, self.loop = \
             split, voxel_size, transform, voxel_max, loop
+        self.feature = feature
         self.presample = presample
         self.variable = variable
         self.shuffle = shuffle
 
-        raw_root = os.path.join(data_root, 'raw')
+        data_root = Path(data_root)
+        raw_root = data_root / 'raw'
         self.raw_root = raw_root
         data_list = sorted(os.listdir(raw_root))
         data_list = [item[:-4] for item in data_list if 'Area_' in item]
         if split == 'train':
-            self.data_list = [item for item in data_list if 'Area_{}'.format(test_area) not in item]
+            self.fns = [item for item in data_list if 'Area_{}'.format(test_area) not in item]
         else:
-            self.data_list = [item for item in data_list if 'Area_{}'.format(test_area) in item]
+            self.fns = [item for item in data_list if 'Area_{}'.format(test_area) in item]
 
-        processed_root = os.path.join(data_root, 'processed')
-        filename = os.path.join(
-            processed_root, f's3dis_{split}_area{test_area}_{voxel_size:.3f}_{str(voxel_max)}.pkl')
+        processed_root = data_root / 'processed'
+        filename = processed_root / f's3dis_{split}_area{test_area}_{voxel_size:.3f}_{str(voxel_max)}.pkl'
+        # presample is only for validation
         if presample and not os.path.exists(filename):
-            np.random.seed(0)
             self.data = []
-            for item in tqdm(self.data_list, desc=f'Loading S3DISFull {split} split on Test Area {test_area}'):
-                data_path = os.path.join(raw_root, item + '.npy')
+            for item in tqdm(self.fns, desc=f'Loading S3DISFull {split} split on Test Area {test_area}'):
+                # room data
+                data_path = raw_root / (item + '.npy')
                 cdata = np.load(data_path).astype(np.float32)
                 cdata[:, :3] -= np.min(cdata[:, :3], 0)
                 if voxel_size:
-                    coord, feat, label = cdata[:, 0:3], cdata[:, 3:6], cdata[:, 6:7]
-                    uniq_idx = voxelize(coord, voxel_size)
-                    coord, feat, label = coord[uniq_idx], feat[uniq_idx], label[uniq_idx]
-                    cdata = np.hstack((coord, feat, label))
+                    xyz, rgb, label = np.split(cdata, [3, 6], axis=-1)
+                    voxel = voxelize(xyz, voxel_size)
+                    uniq_idx = voxel_select(voxel, 0)
+                    xyz, rgb, label = xyz[uniq_idx], rgb[uniq_idx], label[uniq_idx]
+                    cdata = np.hstack([xyz, rgb, label])
                 self.data.append(cdata)
             npoints = np.array([len(data) for data in self.data])
             print('split: %s, median npoints %.1f, avg num points %.1f, std %.1f' % (
                 self.split, np.median(npoints), np.average(npoints), np.std(npoints)))
-            os.makedirs(processed_root, exist_ok=True)
-            with open(filename, 'wb') as f:
-                pickle.dump(self.data, f)
-                print(f"{filename} saved successfully")
+
+            # dump
+            processed_root.mkdir(exist_ok=True)
+            pickle.dump(self.data, open(filename, 'wb'))
+            print(f"{filename} saved successfully")
         elif presample:
-            with open(filename, 'rb') as f:
-                self.data = pickle.load(f)
-                print(f"{filename} load successfully")
-        self.data_idx = np.arange(len(self.data_list))
-        assert len(self.data_idx) > 0
-        print(f"\nTotally {len(self.data_idx)} samples in {split} set")
+            # load
+            self.data = pickle.load(open(filename, 'rb'))
+            print(f"{filename} load successfully")
+
+        assert len(self.fns) > 0
+        print(f"\nTotally {len(self.fns)} samples in {split} set")
 
     def __getitem__(self, idx):
-        data_idx = self.data_idx[idx % len(self.data_idx)]
         if self.split == 'test':
             # for test
-            data_path = os.path.join(self.raw_root, self.data_list[data_idx] + '.npy')
-            cdata = np.load(data_path).astype(np.float32)
-            cdata[:, :3] -= np.min(cdata[:, :3], 0)
-            data = load_data(cdata, self.voxel_size)
-            if exists(self.transform):
-                _data = self.transform(T.Inputs(xyz=data.xyz, rgb=data.rgb, label=data.label))
-                data = DATA(_data['xyz'].astype('f4'), _data['rgb'].astype('f4'), _data['label'].astype('i8'),
-                            data.height[:, None].astype('f4'), data.idx_parts)
-            return data
+            return self.get_test_data(idx)
 
-        if self.presample:
-            coord, feat, label = np.split(self.data[data_idx], [3, 6], axis=1)
-        else:
-            data_path = os.path.join(self.raw_root, self.data_list[data_idx] + '.npy')
-            cdata = np.load(data_path).astype(np.float32)
-            cdata[:, :3] -= np.min(cdata[:, :3], 0)
-            coord, feat, label = cdata[:, :3], cdata[:, 3:6], cdata[:, 6:7]
-            coord, feat, label = crop_pc(coord, feat, label, self.split, self.voxel_size, self.voxel_max,
-                                         downsample=not self.presample, variable=self.variable, shuffle=self.shuffle)
-            # TODO: do we need to -np.min in cropped data?
+        xyz, rgb, label = self.get_data(idx)
         label = label.squeeze(-1).astype('i8')
-        data = {'xyz': coord, 'rgb': feat, 'label': label}
+        data = {'xyz': xyz, 'rgb': rgb, 'label': label}
         # pre-process.
         if exists(self.transform):
             data = self.transform(T.Inputs(**data))
 
         # to float32
-        data['xyz'] = data['xyz'].astype(np.float32)
-        data['rgb'] = data['rgb'].astype(np.float32)
-        data['label'] = data['label'].astype(np.int64)
+        xyz = data['xyz'].astype(np.float32).copy()
+        height = xyz[:, [self.gravity_dim]]
+        rgb = data['rgb'].astype(np.float32).copy()
+        label = data['label'].astype(np.int64).copy()
 
-        if 'height' not in data.keys():
-            data['height'] = coord[:, self.gravity_dim:self.gravity_dim + 1].astype(np.float32)
+        feat = combine_features(xyz, rgb, height, self.feature)
 
-        return DATA(**data, idx_parts=[])
+        return S3DIS_data(xyz=xyz, feat=feat, label=label, idx_parts=[])
 
     def __len__(self):
-        return len(self.data_idx) * self.loop
+        return len(self.fns) * self.loop
+
+    def get_data(self, idx):
+        idx = idx % len(self.fns)
+        if self.presample:
+            data = self.data[idx]
+            xyz, rgb, label = np.split(data, [3, 6], axis=-1)
+        else:
+            data_path = os.path.join(self.raw_root, self.fns[idx] + '.npy')
+            data = np.load(data_path).astype(np.float32)
+            data[:, :3] -= np.min(data[:, :3], 0)
+            xyz, rgb, label = np.split(data, [3, 6], axis=-1)
+
+            # voxelize
+            if exists(self.voxel_size):
+                voxel = voxelize(xyz, self.voxel_size)
+                uniq_idx = voxel_select(voxel, None)
+                xyz, rgb, label = map(lambda x: x[uniq_idx], [xyz, rgb, label])
+            xyz, rgb, label = crop_pc(xyz, rgb, label, self.voxel_max, init_idx=None, variable=self.variable,
+                                      shuffle=self.shuffle)
+        return xyz, rgb, label
+
+    def get_test_data(self, idx):
+        # for test
+        idx = idx % len(self.fns)
+        data = np.load(self.raw_root / (self.fns[idx] + '.npy')).astype(np.float32)
+        data[:, :3] -= np.min(data[:, :3], 0)
+        xyz, rgb, label = data[:, :3], data[:, 3:6], data[:, 6]
+
+        idx_parts = []
+        if exists(self.voxel_size):
+            # idx_sort: original point indicies sorted by voxel NO.
+            # voxel_idx: Voxel NO. for the sorted points
+            voxel = voxelize(xyz, self.voxel_size)
+            for i in range(voxel.v_pcount.max()):
+                pid_select = voxel_select(voxel, i)
+                idx_parts.append(pid_select)
+        else:
+            idx_parts.append(np.arange(label.shape[0]))
+
+        if exists(self.transform):
+            _data = self.transform(T.Inputs(xyz=xyz, rgb=rgb, label=label))
+            xyz, rgb, label = _data['xyz'], _data['rgb'], _data['label']
+
+        height = xyz[:, [self.gravity_dim]]
+        feat = combine_features(xyz, rgb, height, self.feature)
+        return S3DIS_data(xyz=xyz, feat=feat, label=label, idx_parts=idx_parts)
 
 
 if __name__ == '__main__':
