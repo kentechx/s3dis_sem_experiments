@@ -14,7 +14,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import torchmetrics
 from torchmetrics.classification import MulticlassConfusionMatrix
 
-from dataset.s3dis import S3DIS, load_data
+from dataset.s3dis import S3DIS
 from dataset import transforms as T
 
 Metric = namedtuple('Metric', ['miou', 'oa', 'macc'])
@@ -61,7 +61,7 @@ class LitModel(pl.LightningModule):
 
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
-        self.val_cm = MulticlassConfusionMatrix(task='multiclass', num_classes=13)
+        self.val_miou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
         self.test_cm = MulticlassConfusionMatrix(task='multiclass', num_classes=13)
 
     def forward(self, x, xyz):
@@ -69,7 +69,7 @@ class LitModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         xyz = batch.xyz.transpose(1, 2).contiguous()
-        x = torch.cat([batch.rgb, batch.height], dim=-1).transpose(1, 2).contiguous()
+        x = batch.feat.transpose(1, 2).contiguous()
         y = batch.label
         pred = self(x, xyz)
         loss = F.cross_entropy(pred, y, label_smoothing=self.hparams.label_smoothing)
@@ -82,19 +82,15 @@ class LitModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         xyz = batch.xyz.transpose(1, 2).contiguous()
-        x = torch.cat([batch.rgb, batch.height], dim=-1).transpose(1, 2).contiguous()
+        x = batch.feat.transpose(1, 2).contiguous()
         y = batch.label
 
         pred = self(x, xyz)
         loss = F.cross_entropy(pred, y, label_smoothing=self.hparams.label_smoothing)
         self.log('val/loss', loss, prog_bar=True)
 
-        # cm = self.val_iou.confmat
-        self.val_cm(pred, y)
-        metrics = calc_metrics(self.val_cm.confmat)
-        self.log('val/miou', metrics.miou, prog_bar=True, sync_dist=True)
-        self.log('val/oa', metrics.oa, prog_bar=True, sync_dist=True)
-        self.log('val/macc', metrics.macc, prog_bar=True, sync_dist=True)
+        self.val_miou(pred, y)
+        self.log('val/miou', self.val_miou, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         y = batch.label
