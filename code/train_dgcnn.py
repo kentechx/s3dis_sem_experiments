@@ -179,7 +179,7 @@ def main(
         batch_size=2,
         lr=1e-3,
         optimizer='AdamW',
-        weight_decay=1e-4,
+        weight_decay=1e-2,
         warm_up=10,
         loss='cross_entropy',
         label_smoothing=0.,
