@@ -62,7 +62,9 @@ class LitModel(pl.LightningModule):
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
         self.val_miou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
-        self.test_cm = MulticlassConfusionMatrix(task='multiclass', num_classes=13)
+        self.test_miou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
+        self.test_macc = torchmetrics.Accuracy(task='multiclass', num_classes=13, average='macro')
+        self.test_oa = torchmetrics.Accuracy(task='multiclass', num_classes=13)
 
     def forward(self, x, xyz):
         return self.net(x, xyz)
@@ -90,7 +92,7 @@ class LitModel(pl.LightningModule):
         self.log('val/loss', loss, prog_bar=True)
 
         self.val_miou(pred, y)
-        self.log('val/miou', self.val_miou, prog_bar=True)
+        self.log('val/miou', self.val_miou, prog_bar=True, sync_dist=True, on_epoch=True)
 
     def test_step(self, batch, batch_idx):
         y = batch.label
@@ -98,16 +100,16 @@ class LitModel(pl.LightningModule):
         for idx_part in batch.idx_parts:
             idx_part = idx_part[0]
             xyz = batch.xyz[:, idx_part].transpose(1, 2).contiguous()
-            x = torch.cat([batch.rgb[:, idx_part], batch.height[:, idx_part]], dim=-1).transpose(1, 2).contiguous()
+            x = batch.feat[:, idx_part].transpose(1, 2).contiguous()
             pred = self(x, xyz)
             preds[:, idx_part] = pred.argmax(dim=1)
 
-        self.test_cm(preds, y)
-
-        metrics = calc_metrics(self.val_cm.confmat)
-        self.log('test/miou', metrics.miou, prog_bar=True, sync_dist=True)
-        self.log('test/oa', metrics.oa, prog_bar=True, sync_dist=True)
-        self.log('test/macc', metrics.macc, prog_bar=True, sync_dist=True)
+        self.test_miou(preds, y)
+        self.test_oa(preds, y)
+        self.test_macc(preds, y)
+        self.log('test/miou', self.test_miou, prog_bar=True, sync_dist=True, on_epoch=True)
+        self.log('test/oa', self.test_oa, prog_bar=True, sync_dist=True, on_epoch=True)
+        self.log('test/macc', self.test_macc, prog_bar=True, sync_dist=True, on_epoch=True)
 
     def configure_optimizers(self):
         H = self.hparams
@@ -182,6 +184,7 @@ def main(
         project='s3dis',
         offline=False,
         watch=False,
+        test=True,
 ):
     name = f"{name}_area{test_area}"
     pprint(locals())
@@ -200,6 +203,10 @@ def main(
     trainer = pl.Trainer(logger=logger, accelerator='cuda', max_epochs=epochs, callbacks=[callback],
                          gradient_clip_val=gradient_clip_val)
     trainer.fit(model)
+
+    # test
+    if test:
+        trainer.test(model)
 
 
 if __name__ == '__main__':

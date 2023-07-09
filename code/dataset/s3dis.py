@@ -320,7 +320,7 @@ class S3DIS(Dataset):
 
         height = xyz[:, [self.gravity_dim]]
         feat = combine_features(xyz, rgb, height, self.feature)
-        return S3DIS_data(xyz=xyz, feat=feat, label=label, idx_parts=idx_parts)
+        return S3DIS_data(xyz=xyz.astype('f4'), feat=feat.astype('f4'), label=label.astype('i8'), idx_parts=idx_parts)
 
 
 if __name__ == '__main__':
