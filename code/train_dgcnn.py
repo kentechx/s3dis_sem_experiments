@@ -19,6 +19,12 @@ from dataset import transforms as T
 
 Metric = namedtuple('Metric', ['miou', 'oa', 'macc'])
 
+feature_dim = {
+    'xyz': 3,
+    'rgbh': 4,
+    'xyzrgb': 6,
+}
+
 
 def calc_metrics(confmat, eps=1e-5):
     tp = confmat.diag()
@@ -38,6 +44,7 @@ class LitModel(pl.LightningModule):
     def __init__(
             self,
             # ---- data ----
+            feature,
             loop,
             test_area,
             voxel_max,
@@ -57,7 +64,7 @@ class LitModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.net = DGCNN_Seg(k=k, in_dim=4, out_dim=13, dropout=dropout)
+        self.net = DGCNN_Seg(k=k, in_dim=feature_dim[feature], out_dim=13, dropout=dropout)
 
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
@@ -133,11 +140,11 @@ class LitModel(pl.LightningModule):
             T.ColorNormalize(),
             T.AnisotropicScale(scale=[0.9, 1.1]),
             T.XYZAlign(),
-            T.Rotate(angle=[0, 0, 60.]),
+            # T.Rotate(angle=[0, 0, 60.]),
             T.Jitter(sigma=0.005, clip=0.02)
         ])
-        dataset = S3DIS(voxel_max=H.voxel_max, test_area=H.test_area, split='train', transform=transform, loop=H.loop,
-                        presample=False, shuffle=True)
+        dataset = S3DIS(voxel_max=H.voxel_max, test_area=H.test_area, feature=H.feature, split='train',
+                        transform=transform, loop=H.loop, presample=False, shuffle=True)
         return DataLoader(dataset, batch_size=H.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     def val_dataloader(self):
@@ -146,8 +153,8 @@ class LitModel(pl.LightningModule):
             T.ColorNormalize(),
             T.XYZAlign(),
         ])
-        dataset = S3DIS(voxel_max=None, test_area=H.test_area, split='val', transform=transform,
-                        presample=True, shuffle=False)
+        dataset = S3DIS(voxel_max=None, test_area=H.test_area, feature=H.feature, split='val',
+                        transform=transform, presample=True, shuffle=False)
         return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
 
     def test_dataloader(self):
@@ -156,13 +163,14 @@ class LitModel(pl.LightningModule):
             T.ColorNormalize(),
             T.XYZAlign(),
         ])
-        dataset = S3DIS(voxel_max=None, test_area=H.test_area, split='test', transform=transform,
+        dataset = S3DIS(voxel_max=None, test_area=H.test_area, feature=H.feature, split='test', transform=transform,
                         presample=False, shuffle=False)
         return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
 
 
 def main(
         # ---- data ----
+        feature='xyzrgb',
         loop=15,
         voxel_max=20000,
         test_area=5,
@@ -192,9 +200,9 @@ def main(
 
     os.makedirs('wandb', exist_ok=True)
     logger = WandbLogger(project='s3dis_sem_experiments', name=name, save_dir='wandb', offline=offline)
-    model = LitModel(loop=loop, voxel_max=voxel_max, epochs=epochs, batch_size=batch_size, lr=lr, optimizer=optimizer,
-                     weight_decay=weight_decay, warm_up=warm_up, loss=loss, label_smoothing=label_smoothing, k=k,
-                     dropout=dropout, test_area=test_area)
+    model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, epochs=epochs, batch_size=batch_size, lr=lr,
+                     optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up, loss=loss,
+                     label_smoothing=label_smoothing, k=k, dropout=dropout, test_area=test_area)
 
     if watch:
         logger.watch(model, log='all')
