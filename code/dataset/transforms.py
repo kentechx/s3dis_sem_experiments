@@ -144,7 +144,7 @@ class ColorNormalize(Transform):
     def __call__(self, inputs: Inputs):
         rgb = inputs['rgb']
         if rgb.max() > 1:
-            rgb /= 255.
+            rgb = rgb / 255.
 
         rgb = (rgb - self.color_mean) / self.color_std
         inputs['rgb'] = rgb
