@@ -64,7 +64,7 @@ class LitModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.net = DGCNN_Seg(k=k, in_dim=feature_dim[feature], out_dim=13, dropout=dropout, head_norm=batch_size > 1)
+        self.net = DGCNN_Seg(feature_dim[feature], 13, k, dropout=dropout, global_pooling=False)
 
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
@@ -103,13 +103,18 @@ class LitModel(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         y = batch.label
-        preds = torch.zeros_like(y)
+        preds = []
         for idx_part in batch.idx_parts:
             idx_part = idx_part[0]
             xyz = batch.xyz[:, idx_part].transpose(1, 2).contiguous()
             x = batch.feat[:, idx_part].transpose(1, 2).contiguous()
             pred = self(x, xyz)
-            preds[:, idx_part] = pred.argmax(dim=1)
+            preds.append(pred)
+        idx = torch.cat(batch.idx_parts, dim=-1)  # (1, N)
+        preds = torch.cat(preds, dim=-1)
+        preds = torch.scatter_reduce(torch.empty((*preds.shape[:2], y.shape[1])).to(preds),
+                                     2, idx[:, None, :], preds, reduce='mean', include_self=False)
+        preds = preds.argmax(dim=1)
 
         self.test_miou(preds, y)
         self.test_oa(preds, y)
@@ -170,13 +175,13 @@ class LitModel(pl.LightningModule):
 
 def main(
         # ---- data ----
-        feature='xyzrgb',
-        loop=15,
-        voxel_max=20000,
+        feature='rgbh',
+        loop=5,
+        voxel_max=40000,
         test_area=5,
         # ---- train ----
         epochs=100,
-        batch_size=2,
+        batch_size=1,
         lr=1e-3,
         optimizer='AdamW',
         weight_decay=1e-2,
