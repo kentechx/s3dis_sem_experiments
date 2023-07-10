@@ -49,7 +49,6 @@ class LitModel(pl.LightningModule):
             test_area,
             voxel_max,
             # ---- train ----
-            epochs,
             batch_size,
             lr,
             optimizer,
@@ -205,7 +204,7 @@ def main(
 
     os.makedirs('wandb', exist_ok=True)
     logger = WandbLogger(project='s3dis_sem_experiments', name=name, save_dir='wandb', offline=offline)
-    model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, epochs=epochs, batch_size=batch_size, lr=lr,
+    model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, batch_size=batch_size, lr=lr,
                      optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up, loss=loss,
                      label_smoothing=label_smoothing, k=k, dropout=dropout, test_area=test_area)
 
