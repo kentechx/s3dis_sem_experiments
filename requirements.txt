@@ -6,4 +6,4 @@ scipy==1.11.1
 torch==2.0.0
 torchmetrics==0.11.4
 tqdm==4.65.0
-x_dgcnn==0.2.1
+x_dgcnn==0.2.2
