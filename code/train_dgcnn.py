@@ -63,7 +63,7 @@ class LitModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.net = DGCNN_Seg(feature_dim[feature], 13, k, dropout=dropout, global_pooling=False, dynamic=False)
+        self.net = DGCNN_Seg(feature_dim[feature], 13, k, dropout=dropout, global_pooling=False, dynamic=True)
 
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
@@ -181,7 +181,7 @@ def main(
         # ---- train ----
         epochs=100,
         batch_size=1,
-        lr=1e-3,
+        lr=1e-2,
         optimizer='AdamW',
         weight_decay=1e-2,
         warm_up=10,
