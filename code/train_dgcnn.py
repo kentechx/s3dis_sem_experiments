@@ -141,7 +141,7 @@ class LitModel(pl.LightningModule):
 
         transform = T.TransformCompose([
             T.ColorAutoContrast(),
-            T.ColorDrop(p=0.5),
+            # T.ColorAllDrop(p=0.2),
             T.ColorNormalize(),
             T.AnisotropicScale(scale=[0.9, 1.1]),
             T.XYZAlign(),
