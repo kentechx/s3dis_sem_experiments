@@ -58,12 +58,13 @@ class LitModel(pl.LightningModule):
             label_smoothing,
             # ---- model -----
             k,
+            dynamic,
             dropout,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        self.net = DGCNN_Seg(feature_dim[feature], 13, k, dropout=dropout, global_pooling=False, dynamic=True)
+        self.net = DGCNN_Seg(feature_dim[feature], 13, k, dropout=dropout, global_pooling=False, dynamic=dynamic)
 
         # metrics
         self.iou = torchmetrics.JaccardIndex(task='multiclass', num_classes=13)
@@ -190,6 +191,7 @@ def main(
         gradient_clip_val=0,
         # ---- model -----
         k=40,
+        dynamic=True,
         dropout=0.3,
         # ---- log -----
         name='dgcnn',
@@ -206,7 +208,7 @@ def main(
     logger = WandbLogger(project='s3dis_sem_experiments', name=name, save_dir='wandb', offline=offline)
     model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, batch_size=batch_size, lr=lr,
                      optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up, loss=loss,
-                     label_smoothing=label_smoothing, k=k, dropout=dropout, test_area=test_area)
+                     label_smoothing=label_smoothing, k=k, dynamic=dynamic, dropout=dropout, test_area=test_area)
 
     if watch:
         logger.watch(model, log='all')
