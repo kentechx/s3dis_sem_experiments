@@ -13,6 +13,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import torchmetrics
 from torchmetrics.classification import MulticlassConfusionMatrix
+from einops import repeat
 
 from dataset.s3dis import S3DIS
 from dataset import transforms as T
@@ -112,8 +113,9 @@ class LitModel(pl.LightningModule):
             preds.append(pred)
         idx = torch.cat(batch.idx_parts, dim=-1)  # (1, N)
         preds = torch.cat(preds, dim=-1)
+        idx = repeat(idx, 'b n -> b c n', c=preds.shape[1])
         preds = torch.scatter_reduce(torch.empty((*preds.shape[:2], y.shape[1])).to(preds),
-                                     2, idx[:, None, :], preds, reduce='mean', include_self=False)
+                                     2, idx, preds, reduce='mean', include_self=False)
         preds = preds.argmax(dim=1)
 
         self.test_miou(preds, y)
