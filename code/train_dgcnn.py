@@ -182,7 +182,7 @@ def main(
         loop=5,
         voxel_max=40000,
         test_area=5,
-        test_voxel_max=400000,
+        test_voxel_max=200000,
         # ---- train ----
         epochs=100,
         batch_size=1,

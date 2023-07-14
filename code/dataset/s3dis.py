@@ -214,6 +214,7 @@ class S3DIS(Dataset):
         self.shuffle = shuffle
 
         self.raw_root = self.data_root / 'raw'
+        self.voxel_root = self.data_root / 'voxel'
 
         data_list = sorted(os.listdir(self.raw_root))
         data_list = [item[:-4] for item in data_list if 'Area_' in item]
@@ -221,6 +222,9 @@ class S3DIS(Dataset):
             self.fns = [item for item in data_list if 'Area_{}'.format(test_area) not in item]
         else:
             self.fns = [item for item in data_list if 'Area_{}'.format(test_area) in item]
+
+        if exists(voxel_size):
+            self.cache_voxel_data()
 
         # presample is only for validation
         if presample:
@@ -316,14 +320,9 @@ class S3DIS(Dataset):
         return S3DIS_data(xyz=xyz.astype('f4'), feat=feat.astype('f4'), label=label.astype('i8'), idx_parts=idx_parts)
 
     def get_cached_voxel(self, idx, xyz):
-        voxel_root = self.data_root / 'voxel'
-        cache_fp = voxel_root / f'{self.fns[idx]}.pkl'
-        if cache_fp.exists():
-            voxel = pickle.load(open(cache_fp, 'rb'))
-        else:
-            voxel_root.mkdir(exist_ok=True)
-            voxel = voxelize(xyz, self.voxel_size)
-            pickle.dump(voxel, open(cache_fp, 'wb'))
+        cache_fp = self.voxel_root / f'{self.fns[idx]}.pkl'
+        assert cache_fp.exists()
+        voxel = pickle.load(open(cache_fp, 'rb'))
         return voxel
 
     def get_presampled_data(self, split, test_area, voxel_size, voxel_max):
@@ -363,6 +362,20 @@ class S3DIS(Dataset):
             print(f"{cache_fp} saved successfully")
 
         return data
+
+    def cache_voxel_data(self):
+        self.voxel_root.mkdir(exist_ok=True)
+        for fn in tqdm(self.fns, desc='Cache voxel data...'):
+            cache_fp = self.voxel_root / f'{fn}.pkl'
+            if cache_fp.exists():
+                continue
+
+            data = np.load(self.raw_root / (fn + '.npy')).astype(np.float32)
+            data[:, :3] -= np.min(data[:, :3], 0)
+            xyz = data[:, :3]
+
+            voxel = voxelize(xyz, self.voxel_size)
+            pickle.dump(voxel, open(cache_fp, 'wb'))
 
 
 if __name__ == '__main__':
