@@ -101,7 +101,6 @@ def voxel_select(voxel: VoxelGrid, start_idx=None):
 
 
 def crop_pc(coord, feat, label, voxel_max, init_idx=None, variable=True, shuffle=True):
-    crop_idx = None
     N = len(label)  # the number of points
     if N >= voxel_max:
         init_idx = default(init_idx, np.random.randint(N))
@@ -112,7 +111,9 @@ def crop_pc(coord, feat, label, voxel_max, init_idx=None, variable=True, shuffle
         query_inds = np.arange(cur_num_points)
         padding_choice = np.random.choice(cur_num_points, voxel_max - cur_num_points)
         crop_idx = np.hstack([query_inds, query_inds[padding_choice]])
-    crop_idx = np.arange(coord.shape[0]) if crop_idx is None else crop_idx
+    else:
+        crop_idx = np.arange(coord.shape[0])
+
     if shuffle:
         np.random.shuffle(crop_idx)
     coord, feat, label = coord[crop_idx], feat[crop_idx] if feat is not None else None, label[
@@ -201,52 +202,29 @@ class S3DIS(Dataset):
         download_s3dis()
 
         super().__init__()
-        self.split, self.voxel_size, self.transform, self.voxel_max, self.loop = \
-            split, voxel_size, transform, voxel_max, loop
+        self.data_root = Path(data_root)
+        self.split = split
+        self.voxel_size = voxel_size
+        self.transform = transform
+        self.voxel_max = voxel_max
+        self.loop = loop
         self.feature = feature
         self.presample = presample
         self.variable = variable
         self.shuffle = shuffle
 
-        data_root = Path(data_root)
-        raw_root = data_root / 'raw'
-        self.raw_root = raw_root
-        data_list = sorted(os.listdir(raw_root))
+        self.raw_root = self.data_root / 'raw'
+
+        data_list = sorted(os.listdir(self.raw_root))
         data_list = [item[:-4] for item in data_list if 'Area_' in item]
         if split == 'train':
             self.fns = [item for item in data_list if 'Area_{}'.format(test_area) not in item]
         else:
             self.fns = [item for item in data_list if 'Area_{}'.format(test_area) in item]
 
-        processed_root = data_root / 'processed'
-        filename = processed_root / f's3dis_{split}_area{test_area}_{voxel_size:.3f}_{str(voxel_max)}.pkl'
         # presample is only for validation
-        if presample and not os.path.exists(filename):
-            self.data = []
-            for item in tqdm(self.fns, desc=f'Loading S3DISFull {split} split on Test Area {test_area}'):
-                # room data
-                data_path = raw_root / (item + '.npy')
-                cdata = np.load(data_path).astype(np.float32)
-                cdata[:, :3] -= np.min(cdata[:, :3], 0)
-                if voxel_size:
-                    xyz, rgb, label = np.split(cdata, [3, 6], axis=-1)
-                    voxel = voxelize(xyz, voxel_size)
-                    uniq_idx = voxel_select(voxel, 0)
-                    xyz, rgb, label = xyz[uniq_idx], rgb[uniq_idx], label[uniq_idx]
-                    cdata = np.hstack([xyz, rgb, label])
-                self.data.append(cdata)
-            npoints = np.array([len(data) for data in self.data])
-            print('split: %s, median npoints %.1f, avg num points %.1f, std %.1f' % (
-                self.split, np.median(npoints), np.average(npoints), np.std(npoints)))
-
-            # dump
-            processed_root.mkdir(exist_ok=True)
-            pickle.dump(self.data, open(filename, 'wb'))
-            print(f"{filename} saved successfully")
-        elif presample:
-            # load
-            self.data = pickle.load(open(filename, 'rb'))
-            print(f"{filename} load successfully")
+        if presample:
+            self.data = self.get_presampled_data(split, test_area, voxel_size, voxel_max)
 
         assert len(self.fns) > 0
         print(f"\nTotally {len(self.fns)} samples in {split} set")
@@ -256,18 +234,16 @@ class S3DIS(Dataset):
             # for test
             return self.get_test_data(idx)
 
-        xyz, rgb, label = self.get_data(idx)
-        label = label.squeeze(-1).astype('i8')
-        data = {'xyz': xyz, 'rgb': rgb, 'label': label}
+        data = self.get_data(idx)
         # pre-process.
         if exists(self.transform):
             data = self.transform(T.Inputs(**data))
 
         # to float32
-        xyz = data['xyz'].astype(np.float32).copy()
+        xyz = data['xyz'].astype(np.float32)
         height = xyz[:, [self.gravity_dim]]
-        rgb = data['rgb'].astype(np.float32).copy()
-        label = data['label'].astype(np.int64).copy()
+        rgb = data['rgb'].astype(np.float32)
+        label = data['label'].astype(np.int64)
 
         feat = combine_features(xyz, rgb, height, self.feature)
 
@@ -280,22 +256,25 @@ class S3DIS(Dataset):
         idx = idx % len(self.fns)
         if self.presample:
             data = self.data[idx]
-            xyz, rgb, label = np.split(data, [3, 6], axis=-1)
         else:
             data_path = os.path.join(self.raw_root, self.fns[idx] + '.npy')
             data = np.load(data_path).astype(np.float32)
             data[:, :3] -= np.min(data[:, :3], 0)
             xyz, rgb, label = np.split(data, [3, 6], axis=-1)
+            label = label.squeeze(-1).astype(np.int64)
 
             # voxelize
             if exists(self.voxel_size):
-                voxel = voxelize(xyz, self.voxel_size)
+                voxel = self.get_cached_voxel(idx, xyz)
                 uniq_idx = voxel_select(voxel, None)
                 xyz, rgb, label = map(lambda x: x[uniq_idx], [xyz, rgb, label])
             if exists(self.voxel_max):
                 xyz, rgb, label = crop_pc(xyz, rgb, label, self.voxel_max, init_idx=None, variable=self.variable,
                                           shuffle=self.shuffle)
-        return xyz, rgb, label
+            data = {'xyz': np.ascontiguousarray(xyz),
+                    'rgb': np.ascontiguousarray(rgb),
+                    'label': np.ascontiguousarray(label)}
+        return data
 
     def get_test_data(self, idx):
         # for test
@@ -303,15 +282,28 @@ class S3DIS(Dataset):
         data = np.load(self.raw_root / (self.fns[idx] + '.npy')).astype(np.float32)
         data[:, :3] -= np.min(data[:, :3], 0)
         xyz, rgb, label = data[:, :3], data[:, 3:6], data[:, 6]
+        label = label.astype(np.int64)
 
         idx_parts = []
         if exists(self.voxel_size):
             # idx_sort: original point indicies sorted by voxel NO.
             # voxel_idx: Voxel NO. for the sorted points
-            voxel = voxelize(xyz, self.voxel_size)
+            voxel = self.get_cached_voxel(idx, xyz)
             for i in range(voxel.v_pcount.max()):
                 pid_select = voxel_select(voxel, i)
-                idx_parts.append(pid_select)
+                mask = np.zeros(len(pid_select), dtype=bool)
+                candi_idx = np.arange(len(pid_select))
+                while len(candi_idx) > 0:
+                    _xyz = xyz[pid_select]
+                    init_idx = candi_idx[0]
+                    if len(pid_select) > self.voxel_max:
+                        sub_idx = np.argsort(np.sum(np.square(_xyz - _xyz[init_idx]), 1))[:self.voxel_max]
+                        idx_parts.append(pid_select[sub_idx])
+                        mask[sub_idx] = True
+                        candi_idx = np.where(mask == False)[0]
+                    else:
+                        idx_parts.append(pid_select)
+                        break
         else:
             idx_parts.append(np.arange(label.shape[0]))
 
@@ -322,6 +314,55 @@ class S3DIS(Dataset):
         height = xyz[:, [self.gravity_dim]]
         feat = combine_features(xyz, rgb, height, self.feature)
         return S3DIS_data(xyz=xyz.astype('f4'), feat=feat.astype('f4'), label=label.astype('i8'), idx_parts=idx_parts)
+
+    def get_cached_voxel(self, idx, xyz):
+        voxel_root = self.data_root / 'voxel'
+        cache_fp = voxel_root / f'{self.fns[idx]}.pkl'
+        if cache_fp.exists():
+            voxel = pickle.load(open(cache_fp, 'rb'))
+        else:
+            voxel_root.mkdir(exist_ok=True)
+            voxel = voxelize(xyz, self.voxel_size)
+            pickle.dump(voxel, open(cache_fp, 'wb'))
+        return voxel
+
+    def get_presampled_data(self, split, test_area, voxel_size, voxel_max):
+        # each sample is a dict of xyz, rgb, label
+        processed_root = self.data_root / 'processed'
+        cache_fp = processed_root / f's3dis_{split}_area{test_area}_{voxel_size:.3f}_{str(voxel_max)}.pkl'
+        if cache_fp.exists():
+            data = pickle.load(open(cache_fp, 'rb'))
+            print(f"{cache_fp} load successfully")
+        else:
+            data = []
+            for i, stem in tqdm(enumerate(self.fns), desc=f'Loading S3DISFull {split} split on Test Area {test_area}'):
+                # room data
+                cdata = np.load(self.raw_root / (stem + '.npy')).astype(np.float32)
+                cdata[:, :3] -= np.min(cdata[:, :3], 0)
+                xyz, rgb, label = np.split(cdata, [3, 6], axis=-1)
+                label = label.squeeze(-1).astype('i4')
+
+                if exists(voxel_size):
+                    voxel = self.get_cached_voxel(i, xyz)
+                    uniq_idx = voxel_select(voxel, 0)
+                    xyz, rgb, label = xyz[uniq_idx], rgb[uniq_idx], label[uniq_idx]
+
+                if exists(voxel_max):
+                    xyz, rgb, label = crop_pc(xyz, rgb, label, voxel_max, init_idx=0, variable=self.variable,
+                                              shuffle=self.shuffle)
+
+                cdata = {'xyz': xyz, 'rgb': rgb, 'label': label}
+                data.append(cdata)
+            npoints = np.array([len(_data['xyz']) for _data in data])
+            print('split: %s, median npoints %.1f, avg num points %.1f, std %.1f' % (
+                split, np.median(npoints), np.average(npoints), np.std(npoints)))
+
+            # dump
+            processed_root.mkdir(exist_ok=True)
+            pickle.dump(data, open(cache_fp, 'wb'))
+            print(f"{cache_fp} saved successfully")
+
+        return data
 
 
 if __name__ == '__main__':

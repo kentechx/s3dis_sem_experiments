@@ -49,6 +49,7 @@ class LitModel(pl.LightningModule):
             loop,
             test_area,
             voxel_max,
+            test_voxel_max,
             # ---- train ----
             batch_size,
             lr,
@@ -160,8 +161,8 @@ class LitModel(pl.LightningModule):
             T.ColorNormalize(),
             T.XYZAlign(),
         ])
-        dataset = S3DIS(voxel_max=None, test_area=H.test_area, feature=H.feature, split='val',
-                        transform=transform, presample=True, shuffle=False)
+        dataset = S3DIS(voxel_max=H.test_voxel_max, test_area=H.test_area, feature=H.feature, split='val', loop=1,
+                        transform=transform, presample=True, variable=True, shuffle=False)
         return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
 
     def test_dataloader(self):
@@ -170,8 +171,8 @@ class LitModel(pl.LightningModule):
             T.ColorNormalize(),
             T.XYZAlign(),
         ])
-        dataset = S3DIS(voxel_max=None, test_area=H.test_area, feature=H.feature, split='test', transform=transform,
-                        presample=False, shuffle=False)
+        dataset = S3DIS(voxel_max=H.test_voxel_max, test_area=H.test_area, feature=H.feature, split='test', loop=1,
+                        transform=transform, presample=False, variable=True, shuffle=False)
         return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
 
 
@@ -181,6 +182,7 @@ def main(
         loop=5,
         voxel_max=40000,
         test_area=5,
+        test_voxel_max=400000,
         # ---- train ----
         epochs=100,
         batch_size=1,
@@ -208,9 +210,10 @@ def main(
 
     os.makedirs('wandb', exist_ok=True)
     logger = WandbLogger(project='s3dis_sem_experiments', name=name, save_dir='wandb', offline=offline)
-    model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, batch_size=batch_size, lr=lr,
-                     optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up, loss=loss,
-                     label_smoothing=label_smoothing, k=k, dynamic=dynamic, dropout=dropout, test_area=test_area)
+    model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, test_voxel_max=test_voxel_max,
+                     batch_size=batch_size, lr=lr, optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up,
+                     loss=loss, label_smoothing=label_smoothing, k=k, dynamic=dynamic, dropout=dropout,
+                     test_area=test_area)
 
     if watch:
         logger.watch(model, log='all')
