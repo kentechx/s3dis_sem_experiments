@@ -322,7 +322,8 @@ class S3DIS(Dataset):
     def get_cached_voxel(self, idx, xyz):
         cache_fp = self.voxel_root / f'{self.fns[idx]}.pkl'
         assert cache_fp.exists()
-        voxel = pickle.load(open(cache_fp, 'rb'))
+        with open(cache_fp, 'rb') as f:
+            voxel = pickle.load(f)
         return voxel
 
     def get_presampled_data(self, split, test_area, voxel_size, voxel_max):
@@ -330,7 +331,8 @@ class S3DIS(Dataset):
         processed_root = self.data_root / 'processed'
         cache_fp = processed_root / f's3dis_{split}_area{test_area}_{voxel_size:.3f}_{str(voxel_max)}.pkl'
         if cache_fp.exists():
-            data = pickle.load(open(cache_fp, 'rb'))
+            with open(cache_fp, 'rb') as f:
+                data = pickle.load(f)
             print(f"{cache_fp} load successfully")
         else:
             data = []
@@ -358,7 +360,8 @@ class S3DIS(Dataset):
 
             # dump
             processed_root.mkdir(exist_ok=True)
-            pickle.dump(data, open(cache_fp, 'wb'))
+            with open(cache_fp, 'wb') as f:
+                pickle.dump(data, f)
             print(f"{cache_fp} saved successfully")
 
         return data
@@ -375,7 +378,8 @@ class S3DIS(Dataset):
             xyz = data[:, :3]
 
             voxel = voxelize(xyz, self.voxel_size)
-            pickle.dump(voxel, open(cache_fp, 'wb'))
+            with open(cache_fp, 'wb') as f:
+                pickle.dump(voxel, f)
 
 
 if __name__ == '__main__':
