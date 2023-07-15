@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from pprint import pprint
 from collections import namedtuple
 import fire
@@ -203,17 +204,20 @@ def main(
         offline=False,
         watch=False,
         test=True,
+        # ---- resume ----
+        ckpt_path='wandb/s3dis_sem_experiments/lmow9xbv/checkpoints/last.ckpt',
 ):
     name = f"{name}_area{test_area}"
     pprint(locals())
     pl.seed_everything(42)
 
     os.makedirs('wandb', exist_ok=True)
-    logger = WandbLogger(project='s3dis_sem_experiments', name=name, save_dir='wandb', offline=offline)
+    version = Path(ckpt_path).parent.parent.name if ckpt_path else None
+    logger = WandbLogger(project='s3dis_sem_experiments', name=name, version=version, save_dir='wandb', offline=offline)
     model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, test_voxel_max=test_voxel_max,
                      batch_size=batch_size, lr=lr, optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up,
                      loss=loss, label_smoothing=label_smoothing, k=k, dynamic=dynamic, dropout=dropout,
-                     test_area=test_area)
+                     test_area=test_area).load_from_checkpoint(ckpt_path)
 
     if watch:
         logger.watch(model, log='all')
@@ -221,7 +225,7 @@ def main(
     callback = ModelCheckpoint(save_last=True)
     trainer = pl.Trainer(logger=logger, accelerator='cuda', max_epochs=epochs, callbacks=[callback],
                          gradient_clip_val=gradient_clip_val)
-    trainer.fit(model)
+    trainer.fit(model, ckpt_path=ckpt_path)
 
     # test
     if test:
