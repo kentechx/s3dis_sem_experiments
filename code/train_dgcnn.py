@@ -174,7 +174,7 @@ class LitModel(pl.LightningModule):
         ])
         dataset = S3DIS(voxel_max=H.test_voxel_max, test_area=H.test_area, feature=H.feature, split='test', loop=1,
                         transform=transform, presample=False, variable=True, shuffle=False)
-        return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+        return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
 
 def main(
@@ -234,6 +234,8 @@ def main(
 
     # test
     if test:
+        trainer = pl.Trainer(logger=logger, accelerator='cuda', max_epochs=epochs, callbacks=[callback],
+                             gradient_clip_val=gradient_clip_val, devices=1)
         trainer.test(model)
 
 
