@@ -205,7 +205,7 @@ def main(
         watch=False,
         test=True,
         # ---- resume ----
-        ckpt_path='wandb/s3dis_sem_experiments/lmow9xbv/checkpoints/last.ckpt',
+        ckpt_path=None,
 ):
     name = f"{name}_area{test_area}"
     pprint(locals())
