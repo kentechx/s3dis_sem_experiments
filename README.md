@@ -19,7 +19,6 @@ pip install -r requirements.txt
 The experiments are conducted on the following models:
 
 - [DGCNN](https://github.com/kentechx/x-dgcnn)
-- [PointNet2](https://github.com/kentechx/pointnet)
 
 Training models by running the corresponding scripts in the `code` folder. For example, to train the DGCNN model with
 the default configuration, run the following command:
@@ -36,14 +35,12 @@ it to the `code/dataset/data/s3disfull.tar`.
 
 ## Results
 
-The table below presents the semantic segmentation of the models on the S3DIS dataset. The results are evaluated on the
-subsampled point clouds (voxel size = 0.04) as a common practice.
+The table below presents the semantic segmentation results of the models on the S3DIS dataset. The results are evaluated
+on the subsampled point clouds (voxel size = 0.04) as a common practice.
 
-| Model        | input      | 6-fold mIoU (%) | OA (%) | device |
-|--------------|------------|-----------------|--------|--------|
-| PointNet2SSG | rgb+height |                 |        |        |
-| PointNet2MSG | rgb+height |                 |        |        |
-| DGCNN        | rgb+height |                 |        |        |
+| Model | input      | 6-fold <br/>mIoU (%) | 6-fold <br/>OA (%) | area 5<br/>mIoU (%) | area 5<br/>mIoU (%) | device  | report                                                |
+|-------|------------|----------------------|--------------------|---------------------|---------------------|---------|-------------------------------------------------------|
+| DGCNN | rgb+height | 53.1                 | 82.2               | 47.0                | 81.5                | 4x 3090 | [report](https://api.wandb.ai/links/kd_shen/q4z92hx2) |
 
 You can reproduce the results by running the corresponding scripts in the `code` folder with default configurations.
 
