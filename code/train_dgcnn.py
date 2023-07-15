@@ -214,10 +214,15 @@ def main(
     os.makedirs('wandb', exist_ok=True)
     version = Path(ckpt_path).parent.parent.name if ckpt_path else None
     logger = WandbLogger(project='s3dis_sem_experiments', name=name, version=version, save_dir='wandb', offline=offline)
-    model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, test_voxel_max=test_voxel_max,
-                     batch_size=batch_size, lr=lr, optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up,
-                     loss=loss, label_smoothing=label_smoothing, k=k, dynamic=dynamic, dropout=dropout,
-                     test_area=test_area).load_from_checkpoint(ckpt_path)
+
+    if ckpt_path:
+        # resume
+        model = LitModel.load_from_checkpoint(ckpt_path)
+    else:
+        model = LitModel(feature=feature, loop=loop, voxel_max=voxel_max, test_voxel_max=test_voxel_max,
+                         batch_size=batch_size, lr=lr, optimizer=optimizer, weight_decay=weight_decay, warm_up=warm_up,
+                         loss=loss, label_smoothing=label_smoothing, k=k, dynamic=dynamic, dropout=dropout,
+                         test_area=test_area)
 
     if watch:
         logger.watch(model, log='all')
