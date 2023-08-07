@@ -198,7 +198,7 @@ def main(
         loop=30,
         voxel_max=24000,
         test_area=5,
-        test_voxel_max=200000,
+        test_voxel_max=400000,
         # ---- train ----
         epochs=100,
         batch_size=32,
@@ -215,7 +215,6 @@ def main(
         dropout=None,
         # ---- log -----
         # name='dgcnn',
-        project='s3dis',
         offline=False,
         watch=False,
         test=True,
