@@ -244,7 +244,7 @@ def main(
 
     callback = ModelCheckpoint(save_last=True)
     trainer = pl.Trainer(logger=logger, accelerator='cuda', max_epochs=epochs, callbacks=[callback],
-                         gradient_clip_val=gradient_clip_val)
+                         gradient_clip_val=gradient_clip_val, sync_batchnorm=True)
     trainer.fit(model, ckpt_path=ckpt_path)
 
     # test
