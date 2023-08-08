@@ -205,7 +205,7 @@ def main(
         lr=1e-2,
         optimizer='AdamW',
         weight_decay=1e-2,
-        warm_up=10,
+        warm_up=0,
         loss='cross_entropy',
         label_smoothing=0.05,
         gradient_clip_val=0,
