@@ -42,7 +42,8 @@ on the subsampled point clouds (voxel size = 0.04) as a common practice.
 | Model        | input      | 6-fold <br/>mIoU (%) | 6-fold <br/>OA (%) | area 5<br/>mIoU (%) | area 5<br/>OA (%) | device  | report                                                |
 |--------------|------------|----------------------|--------------------|---------------------|-------------------|---------|-------------------------------------------------------|
 | DGCNN        | rgb+height | 53.1                 | 82.2               | 47.0                | 81.5              | 4x 3090 | [report](https://api.wandb.ai/links/kd_shen/q4z92hx2) |
-| PointNext-S  | rgb+height | 67.5                 | 88.1               | 65.2                | 89.0              | 1x 3090 | [report](https://api.wandb.ai/links/kd_shen/58oqu6uk)                                            |
+| PointNext-S  | rgb+height | 67.5                 | 88.1               | 65.2                | 89.0              | 1x 3090 | [report](https://api.wandb.ai/links/kd_shen/58oqu6uk) |
+| PointNext-XL | rgb+height | 71.4                 | 89.2               | 68.2                | 90.1              | 1x 3090 | [report](https://api.wandb.ai/links/kd_shen/l9xelymu) |
 
 You can reproduce the results by running the corresponding scripts in the `code` folder with default configurations.
 
